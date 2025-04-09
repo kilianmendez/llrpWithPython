@@ -1,4 +1,7 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Depends
+from sqlalchemy.orm import Session
+from models import TagReading, get_db
+import datetime
 from sllurp import llrp
 from unittest.mock import MagicMock
 import asyncio
@@ -19,6 +22,7 @@ active_websockets: Set[WebSocket] = set()
 def tag_report_callback(_, tags):
     """Called when tags are reported by the reader"""
     if tags:
+        db = next(get_db())
         for tag in tags:
             tag_data = {
                 "epc": tag.get("EPC-96", "N/A"),
@@ -27,7 +31,39 @@ def tag_report_callback(_, tags):
                 "timestamp": tag.get("LastSeenTimestampUTC", "N/A"),
                 "count": tag.get("TagSeenCount", "N/A")
             }
+            
+            # Check if tag already exists
+            existing_tag = db.query(TagReading).filter(TagReading.epc == tag_data["epc"]).first()
+            
+            if existing_tag:
+                # Update existing tag
+                existing_tag.antenna = tag_data["antenna"]
+                existing_tag.rssi = tag_data["rssi"]
+                existing_tag.timestamp = datetime.datetime.utcfromtimestamp(tag_data["timestamp"])
+                existing_tag.count = tag_data["count"]
+            else:
+                # Create new tag
+                db_tag = TagReading(
+                    epc=tag_data["epc"],
+                    antenna=tag_data["antenna"],
+                    rssi=tag_data["rssi"],
+                    timestamp=datetime.datetime.utcfromtimestamp(tag_data["timestamp"]),
+                    count=tag_data["count"]
+                )
+                db.add(db_tag)
+            
+            # Add to WebSocket queue
             tag_queue.put(tag_data)
+            
+        # Commit all changes at once
+        db.commit()
+        db.close()
+
+# Add new endpoint to query readings
+@app.get("/readings/")
+def get_readings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    readings = db.query(TagReading).offset(skip).limit(limit).all()
+    return readings
 
 class ConnectionRequest(BaseModel):
     ip_address: str
