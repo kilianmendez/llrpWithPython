@@ -5,6 +5,17 @@ from datetime import datetime
 
 Base = declarative_base()
 
+class Product(Base):
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    epc = Column(String, unique=True, index=True)
+    name = Column(String)
+    description = Column(String)
+    stock = Column(Integer)
+    image_url = Column(String)  # URL o path local de la imagen
+
+
 class TagReading(Base):
     __tablename__ = "tag_readings"
 
