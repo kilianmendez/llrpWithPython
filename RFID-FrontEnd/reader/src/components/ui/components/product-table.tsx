@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Search, Trash2, Edit, Tag } from "lucide-react"
-import { API_BASE_URL, API_GET_PRODUCTS } from "@/app/config/config"
+import { API_BASE_URL, API_GET_PRODUCTS, API_DELETE_PRODUCT } from "@/app/config/config"
 import axios from "axios"
 
 interface Product {
@@ -21,6 +21,12 @@ interface Product {
 export function ProductTable() {
   const [products, setProducts] = useState<Product[]>([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null)
+  const [showToast, setShowToast] = useState(false)
+
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null)
+  const [editedProduct, setEditedProduct] = useState<FormData | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   const filteredProducts = products.filter(
     (product) =>
@@ -28,8 +34,49 @@ export function ProductTable() {
       product.epc.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const handleDelete = (id: string) => {
-    setProducts(products.filter((product) => product.id !== id))
+  const handleDeleteClick = (product: Product) => {
+    setProductToDelete(product)
+  }
+
+  const handleUpdateProduct = async () => {
+    if (!productToEdit) return
+  
+    try {
+      const formData = new FormData()
+      formData.append("name", productToEdit.name)
+      formData.append("epc", productToEdit.epc)
+      formData.append("description", productToEdit.description)
+      formData.append("stock", String(productToEdit.stock))
+      if (editedProduct) {
+        const file = editedProduct.get("image") as File
+        if (file) formData.append("image", file)
+      }
+  
+      const response = await axios.put(
+        `${API_BASE_URL}/products/update/${productToEdit.id}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      )
+  
+      console.log("Updated:", response.data)
+      setProductToEdit(null)
+      getProducts()
+    } catch (error) {
+      console.error("Error updating product:", error)
+    }
+  }
+  
+  
+  const confirmDelete = async (productId: string) => {
+    try {
+      await axios.delete(API_DELETE_PRODUCT(Number(productId)))
+      setProducts(products.filter((p) => p.id !== productId))
+      setShowToast(true)
+    } catch (error) {
+      console.error("Error al eliminar producto:", error)
+    } finally {
+      setProductToDelete(null)
+    }
   }
 
   const getProducts = async () => {
@@ -46,7 +93,15 @@ export function ProductTable() {
     getProducts()
   }, [])
 
+  useEffect(() => {
+    if (showToast) {
+      const timer = setTimeout(() => setShowToast(false), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [showToast])
+
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -106,10 +161,10 @@ export function ProductTable() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" onClick={() => setProductToEdit(product)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(product.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(product)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -122,5 +177,128 @@ export function ProductTable() {
         </div>
       </CardContent>
     </Card>
+
+    {productToDelete && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+          <h2 className="text-lg font-semibold mb-4">
+            Delete "{productToDelete.name}"?
+          </h2>
+          <p className="text-sm text-gray-600 mb-6">
+            Are you sure you want to delete this product? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setProductToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={() => confirmDelete(productToDelete.id)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+    {showToast && (
+      <div className="fixed bottom-4 right-4 bg-emerald-600 text-white px-4 py-2 rounded shadow-lg">
+        Product deleted successfully
+      </div>
+    )}
+    
+
+    {productToEdit && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
+      <div className="max-h-[85vh] overflow-y-auto p-6">
+        <h2 className="text-lg font-semibold mb-4">
+          Edit Product: "{productToEdit.name}"
+        </h2>
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Product Name</label>
+            <Input
+              value={productToEdit.name}
+              onChange={(e) =>
+                setProductToEdit({ ...productToEdit, name: e.target.value })
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">EPC</label>
+            <Input
+              value={productToEdit.epc}
+              onChange={(e) =>
+                setProductToEdit({ ...productToEdit, epc: e.target.value })
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Description</label>
+            <Input
+              value={productToEdit.description}
+              onChange={(e) =>
+                setProductToEdit({ ...productToEdit, description: e.target.value })
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Stock</label>
+            <Input
+              type="number"
+              value={productToEdit.stock}
+              onChange={(e) =>
+                setProductToEdit({
+                  ...productToEdit,
+                  stock: Number(e.target.value),
+                })
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Image</label>
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  const preview = URL.createObjectURL(file)
+                  setImagePreview(preview)
+                  const form = new FormData()
+                  form.append("image", file)
+                  setEditedProduct(form)
+                }
+              }}
+            />
+            {imagePreview || productToEdit.image_url ? (
+              <img
+                src={imagePreview || `${API_BASE_URL}/${productToEdit.image_url}`}
+                alt="Preview"
+                className="mt-2 h-32 object-cover rounded"
+              />
+            ) : null}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="outline" onClick={() => setProductToEdit(null)}>
+            Cancel
+          </Button>
+          <Button
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
+            onClick={handleUpdateProduct}
+          >
+            Update
+          </Button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
+    </>
   )
 }

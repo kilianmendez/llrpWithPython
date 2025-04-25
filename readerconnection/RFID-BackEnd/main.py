@@ -296,7 +296,7 @@ class ProductOut(BaseModel):
 def list_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return db.query(Product).offset(skip).limit(limit).all()
 
-@app.delete("/products/{product_id}")
+@app.delete("/products/delete/{product_id}")
 def delete_product(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -308,6 +308,54 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(product)
     db.commit()
     return {"status": "success", "message": f"Producto con ID {product_id} eliminado"}
+
+
+@app.put("/products/update/{product_id}")
+def update_product(
+    product_id: int,
+    epc: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(...),
+    stock: int = Form(...),
+    image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    # Validar si se quiere cambiar el EPC a uno ya existente
+    existing_epc = db.query(Product).filter(Product.epc == epc, Product.id != product_id).first()
+    if existing_epc:
+        raise HTTPException(status_code=400, detail="Ya existe otro producto con ese EPC")
+
+    product.epc = epc
+    product.name = name
+    product.description = description
+    product.stock = stock
+
+    # Si viene una imagen nueva, la reemplazamos
+    if image:
+        if product.image_url and os.path.exists(product.image_url):
+            os.remove(product.image_url)  # eliminar anterior
+
+        new_path = f"images/{image.filename}"
+        with open(new_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        product.image_url = new_path
+
+    db.commit()
+    db.refresh(product)
+
+    return {"status": "success", "product": {
+        "id": product.id,
+        "epc": product.epc,
+        "name": product.name,
+        "description": product.description,
+        "stock": product.stock,
+        "image_url": product.image_url
+    }}
+
 
 # --- SERVIR ARCHIVOS ESTÁTICOS ----------------------------------------------------------
 
