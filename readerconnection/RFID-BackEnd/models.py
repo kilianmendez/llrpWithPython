@@ -1,44 +1,36 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
 from datetime import datetime
-
-Base = declarative_base()
+from database import Base  # ✅ Usamos el Base correcto
 
 class Product(Base):
     __tablename__ = "products"
-
     id = Column(Integer, primary_key=True, index=True)
     epc = Column(String, unique=True, index=True)
     name = Column(String)
     description = Column(String)
     stock = Column(Integer)
-    image_url = Column(String)  # URL o path local de la imagen
-
+    image_url = Column(String)
 
 class TagReading(Base):
     __tablename__ = "tag_readings"
-
     id = Column(Integer, primary_key=True, index=True)
     epc = Column(String, index=True)
     antenna = Column(Integer)
     rssi = Column(Float)
-    timestamp = Column(DateTime, default=lambda: datetime.now(datetime.timezone.utc))
+    timestamp = Column(DateTime, default=datetime.utcnow)
     count = Column(Integer)
 
-# Create database engine
-DATABASE_URL = "sqlite:///./rfid_readings.db"
-engine = create_engine(DATABASE_URL)
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False)  # ✅ nuevo campo
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Solo este Pydantic schema es necesario aquí
+from pydantic import BaseModel, EmailStr
 
-# SessionLocal class
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class LoginInput(BaseModel):
+    email: EmailStr
+    password: str
