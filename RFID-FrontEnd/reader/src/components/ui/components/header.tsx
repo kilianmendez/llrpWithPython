@@ -107,7 +107,7 @@ export function Header({ isConnected, onToggleConnection, onRefreshReadings }: H
                 onClick={() => router.push("/admin")}
                 className="text-sm"
               >
-                Manage Users
+                Admin Panel
               </Button>
             )}
 

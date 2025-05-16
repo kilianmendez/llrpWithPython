@@ -17,6 +17,7 @@ import {
 import { Upload, Tag, Save } from "lucide-react"
 import axios from "axios"
 import { API_POST_PRODUCT } from "@/app/config/config"
+import { useUser } from "@/contexts/userContext" // ✅ importado
 
 export function ProductForm() {
   const [name, setName] = useState("")
@@ -25,6 +26,8 @@ export function ProductForm() {
   const [stock, setStock] = useState(0)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
+
+  const { user } = useUser() // ✅ obtenemos token
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
@@ -53,6 +56,7 @@ export function ProductForm() {
       const response = await axios.post(API_POST_PRODUCT, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${user?.token}`, // ✅ importante
         },
       })
 

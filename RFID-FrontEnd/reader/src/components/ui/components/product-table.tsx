@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useUser } from "@/contexts/userContext"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -9,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Search, Trash2, Edit, Tag } from "lucide-react"
 import { API_BASE_URL, API_GET_PRODUCTS, API_DELETE_PRODUCT } from "@/app/config/config"
 import axios from "axios"
+import { useUser } from "@/contexts/userContext"
+import { Label } from "@/components/ui/label"
 
 interface Product {
   id: string
@@ -17,12 +18,12 @@ interface Product {
   stock: number
   epc: string
   image_url: string
+  creator_id: number // ✅ necesario para control de permisos
 }
 
 export function ProductTable() {
   const { user } = useUser()
   const isGuest = user?.isGuest
-
   const [products, setProducts] = useState<Product[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [productToDelete, setProductToDelete] = useState<Product | null>(null)
@@ -57,7 +58,12 @@ export function ProductTable() {
       const response = await axios.put(
         `${API_BASE_URL}/products/update/${productToEdit.id}`,
         formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${user?.token}`,
+          },
+        }
       )
 
       console.log("Updated:", response.data)
@@ -70,7 +76,11 @@ export function ProductTable() {
 
   const confirmDelete = async (productId: string) => {
     try {
-      await axios.delete(API_DELETE_PRODUCT(Number(productId)))
+      await axios.delete(API_DELETE_PRODUCT(Number(productId)), {
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      })
       setProducts(products.filter((p) => p.id !== productId))
       setShowToast(true)
     } catch (error) {
@@ -84,9 +94,11 @@ export function ProductTable() {
     try {
       const response = await axios.get(API_GET_PRODUCTS, {
         params: { skip: 0, limit: 100 },
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
       })
       setProducts(response.data)
-      console.log(response.data)
     } catch (error) {
       console.error("Error fetching products:", error)
     }
@@ -154,7 +166,9 @@ export function ProductTable() {
                         />
                       </TableCell>
                       <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell className="hidden max-w-xs truncate md:table-cell">{product.description}</TableCell>
+                      <TableCell className="hidden max-w-xs truncate md:table-cell">
+                        {product.description}
+                      </TableCell>
                       <TableCell>{product.stock}</TableCell>
                       <TableCell className="hidden font-mono text-xs lg:table-cell">
                         <div className="flex items-center gap-1">
@@ -163,17 +177,18 @@ export function ProductTable() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        {!isGuest && (
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon" onClick={() => setProductToEdit(product)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(product)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </TableCell>
+  {(user?.isAdmin || user?.id === product.creator_id) && (
+    <div className="flex justify-end gap-2">
+      <Button variant="ghost" size="icon" onClick={() => setProductToEdit(product)}>
+        <Edit className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(product)}>
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  )}
+</TableCell>
+
                     </TableRow>
                   ))
                 )}
@@ -183,10 +198,12 @@ export function ProductTable() {
         </CardContent>
       </Card>
 
-      {!isGuest && productToDelete && (
+      {productToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
-            <h2 className="text-lg font-semibold mb-4">Delete "{productToDelete.name}"?</h2>
+            <h2 className="text-lg font-semibold mb-4">
+              Delete "{productToDelete.name}"?
+            </h2>
             <p className="text-sm text-gray-600 mb-6">
               Are you sure you want to delete this product? This action cannot be undone.
             </p>
@@ -220,38 +237,47 @@ export function ProductTable() {
               </h2>
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Product Name</label>
+                  <Label className="text-sm font-medium">Product Name</Label>
                   <Input
                     value={productToEdit.name}
-                    onChange={(e) => setProductToEdit({ ...productToEdit, name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">EPC</label>
-                  <Input
-                    value={productToEdit.epc}
-                    onChange={(e) => setProductToEdit({ ...productToEdit, epc: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Description</label>
-                  <Input
-                    value={productToEdit.description}
-                    onChange={(e) => setProductToEdit({ ...productToEdit, description: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Stock</label>
-                  <Input
-                    type="number"
-                    value={productToEdit.stock}
                     onChange={(e) =>
-                      setProductToEdit({ ...productToEdit, stock: Number(e.target.value) })
+                      setProductToEdit({ ...productToEdit, name: e.target.value })
                     }
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Image</label>
+                  <Label className="text-sm font-medium">EPC</Label>
+                  <Input
+                    value={productToEdit.epc}
+                    onChange={(e) =>
+                      setProductToEdit({ ...productToEdit, epc: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Description</Label>
+                  <Input
+                    value={productToEdit.description}
+                    onChange={(e) =>
+                      setProductToEdit({ ...productToEdit, description: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Stock</Label>
+                  <Input
+                    type="number"
+                    value={productToEdit.stock}
+                    onChange={(e) =>
+                      setProductToEdit({
+                        ...productToEdit,
+                        stock: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Image</Label>
                   <Input
                     type="file"
                     accept="image/*"

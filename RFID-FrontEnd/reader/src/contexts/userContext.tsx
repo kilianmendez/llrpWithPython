@@ -3,10 +3,11 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 
 interface User {
-    email: string
-    token: string
-    isGuest?: boolean
-    isAdmin?: boolean 
+  email: string
+  token: string
+  id: number
+  isGuest?: boolean
+  isAdmin?: boolean
 }
 
 interface UserContextType {
@@ -24,20 +25,28 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
     const storedToken = localStorage.getItem("token")
     const storedEmail = localStorage.getItem("email")
     const isGuest = localStorage.getItem("guest") === "true"
-    const isAdmin = localStorage.getItem("isAdmin") === "true"  // ✅ recuperar rol
+    const isAdmin = localStorage.getItem("isAdmin") === "true"
+    const userId = localStorage.getItem("userId")
   
     if (isGuest) {
-      setUser({ email: "guest", token: "", isGuest: true })
-    } else if (storedToken && storedEmail) {
-      setUser({ email: storedEmail, token: storedToken, isAdmin })
+      setUser({ email: "guest", token: "", isGuest: true, id: -1 })
+    } else if (storedToken && storedEmail && userId) {
+      setUser({
+        email: storedEmail,
+        token: storedToken,
+        id: parseInt(userId), // ✅ obligatorio
+        isAdmin: isAdmin,
+      })
     }
   }, [])
+
 
   const logout = () => {
     localStorage.removeItem("token")
     localStorage.removeItem("email")
     localStorage.removeItem("guest")
-    localStorage.removeItem("isAdmin")  // ✅ limpiar rol
+    localStorage.removeItem("isAdmin")
+    localStorage.removeItem("userId")
     setUser(null)
   }
 

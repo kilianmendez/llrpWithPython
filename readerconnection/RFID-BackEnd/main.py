@@ -20,6 +20,7 @@ import shutil
 from typing import Optional, Set, List
 from sllurp import llrp
 from unittest.mock import MagicMock
+from models import ProductOut
 
 # --- CONFIGURACIÓN APP Y SEGURIDAD -------------------------------------------------------
 
@@ -27,7 +28,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,9 +89,11 @@ class ProductOut(BaseModel):
     description: str
     stock: int
     image_url: str
-    class Config:
-        orm_mode = True
-            
+    creator_id: int  # ✅ Necesario para permisos en el frontend
+
+    model_config = {
+        "from_attributes": True  # ✅ Sintaxis correcta en Pydantic v2
+    }     
 
 # --- REGISTRO Y LOGIN ---------------------------------------------------------------------
 
@@ -119,7 +122,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "is_admin": user.is_admin  # ✅ devolvemos si es admin
+        "is_admin": user.is_admin,  # ✅ devolvemos si es admin
+        "user_id": user.id
     }
 
 
@@ -173,7 +177,7 @@ def set_user_admin_status(
 @app.get("/users/")
 def list_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     users = db.query(User).all()
-    return [{"id": u.id, "name": u.name, "email": u.email, "is_admin": u.is_admins} for u in users]
+    return [{"id": u.id, "name": u.name, "email": u.email, "is_admin": u.is_admin} for u in users]
 
 
 # --- VARIABLES GLOBALES RFID -------------------------------------------------------------
@@ -326,33 +330,52 @@ def upload_product_with_image(
     description: str = Form(...),
     stock: int = Form(...),
     image: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)  # ✅ añadimos el usuario logueado
 ):
     if db.query(Product).filter(Product.epc == epc).first():
-        return {"status": "error", "message": "Ya existe un producto con ese EPC"}
+        raise HTTPException(status_code=400, detail="Ya existe un producto con ese EPC")
     path = f"images/{image.filename}"
     with open(path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
-    product = Product(epc=epc, name=name, description=description, stock=stock, image_url=path)
+    product = Product(
+        epc=epc,
+        name=name,
+        description=description,
+        stock=stock,
+        image_url=path,
+        creator_id=current_user.id  # ✅ se guarda el autor
+    )
     db.add(product)
     db.commit()
     db.refresh(product)
     return {"status": "success", "product": product}
+
 
 @app.get("/products/", response_model=List[ProductOut])
 def list_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return db.query(Product).offset(skip).limit(limit).all()
 
 @app.delete("/products/delete/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db)):
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    if product.creator_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="No tienes permisos para eliminar este producto")
+
     if os.path.exists(product.image_url):
         os.remove(product.image_url)
+
     db.delete(product)
     db.commit()
     return {"status": "success", "message": "Producto eliminado"}
+
 
 @app.put("/products/update/{product_id}")
 def update_product(
@@ -362,13 +385,19 @@ def update_product(
     description: str = Form(...),
     stock: int = Form(...),
     image: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    if product.creator_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este producto")
+
     if epc != product.epc and db.query(Product).filter(Product.epc == epc).first():
         raise HTTPException(status_code=400, detail="Otro producto ya tiene ese EPC")
+
     if image:
         if os.path.exists(product.image_url):
             os.remove(product.image_url)
@@ -376,13 +405,16 @@ def update_product(
         with open(path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
         product.image_url = path
+
     product.epc = epc
     product.name = name
     product.description = description
     product.stock = stock
+
     db.commit()
     db.refresh(product)
     return {"status": "success", "product": product}
+
 
 # --- SERVIR ARCHIVOS ESTÁTICOS ----------------------------------------------------------
 
