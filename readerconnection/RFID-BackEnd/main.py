@@ -187,23 +187,29 @@ def tag_report_callback(_, tags):
             for tag in tags:
                 print("📥 Lectura recibida:", tag)
 
-                # ✅ CORRECCIÓN EPC Y TIMESTAMP
+                # Decodificar EPC
                 raw_epc = tag.get("EPC-96", b"")
                 epc_str = raw_epc.decode("utf-8") if isinstance(raw_epc, bytes) else str(raw_epc)
 
+                # Buscar producto con ese EPC
+                product = db.query(Product).filter(Product.epc == epc_str).first()
+                display_name = product.name if product else epc_str
 
+                # Timestamp convertido
                 timestamp_raw = tag.get("LastSeenTimestampUTC", time.time())
                 timestamp = datetime.datetime.utcfromtimestamp(timestamp_raw / 1e6)
 
                 tag_data = {
                     "epc": epc_str,
+                    "name": display_name,  # ✅ nombre o EPC si no hay producto
                     "antenna": tag.get("AntennaID", "N/A"),
                     "rssi": tag.get("PeakRSSI", "N/A"),
                     "timestamp": timestamp,
                     "count": tag.get("TagSeenCount", 1)
                 }
 
-                existing_tag = db.query(TagReading).filter(TagReading.epc == tag_data["epc"]).first()
+                # Guardar o actualizar lectura en la base de datos
+                existing_tag = db.query(TagReading).filter(TagReading.epc == epc_str).first()
                 if existing_tag:
                     existing_tag.antenna = tag_data["antenna"]
                     existing_tag.rssi = tag_data["rssi"]
@@ -213,7 +219,9 @@ def tag_report_callback(_, tags):
                     db_tag = TagReading(**tag_data)
                     db.add(db_tag)
 
+                # Enviar al frontend
                 tag_queue.put(tag_data)
+
             db.commit()
         except Exception as e:
             print("❌ Error saving tag:", e)

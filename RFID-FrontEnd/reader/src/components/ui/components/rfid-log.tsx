@@ -15,12 +15,10 @@ export function RfidLog({ isConnected }: RfidLogProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const { messages } = useWebSocket()
 
-  // Estado local para marcar "nuevas" lecturas visualmente
   const [logs, setLogs] = useState<
-    { id: string; epc: string; timestamp: Date; isNew: boolean }[]
+    { id: string; epc: string; name?: string; timestamp: Date; isNew: boolean }[]
   >([])
 
-  // Al recibir nuevas lecturas vía contexto, si estamos conectados => actualizamos logs
   useEffect(() => {
     if (!isConnected || messages.length === 0) return
 
@@ -29,6 +27,7 @@ export function RfidLog({ isConnected }: RfidLogProps) {
     const newLog = {
       id: crypto.randomUUID(),
       epc: lastMessage.epc,
+      name: lastMessage.name, // ✅ puede ser undefined
       timestamp: new Date(lastMessage.timestamp),
       isNew: true,
     }
@@ -46,7 +45,6 @@ export function RfidLog({ isConnected }: RfidLogProps) {
     })
   }, [messages, isConnected])
 
-  // Auto-scroll al final
   useEffect(() => {
     if (scrollAreaRef.current) {
       const scrollArea = scrollAreaRef.current
@@ -89,9 +87,7 @@ export function RfidLog({ isConnected }: RfidLogProps) {
                   <div
                     key={log.id}
                     className={`flex items-start gap-2 rounded-md p-2 transition-colors ${
-                      log.isNew
-                        ? "bg-emerald-50 dark:bg-emerald-950/20"
-                        : ""
+                      log.isNew ? "bg-emerald-50 dark:bg-emerald-950/20" : ""
                     }`}
                   >
                     <Tag
@@ -102,7 +98,7 @@ export function RfidLog({ isConnected }: RfidLogProps) {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-emerald-600">
-                          {log.epc}
+                          {log.name ?? log.epc} {/* ✅ Muestra nombre si existe */}
                         </span>
                         {log.isNew && (
                           <Badge

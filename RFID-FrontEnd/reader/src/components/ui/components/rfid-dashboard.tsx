@@ -30,7 +30,7 @@ export function RfidDashboard() {
 
       <main className="flex-1 w-full overflow-y-auto px-4 md:px-6 py-4">
         <div className="mx-auto w-full max-w-7xl space-y-4">
-          <Tabs defaultValue="inventory" className="py-4">
+          <Tabs defaultValue="dashboard" className="py-4">
             <TabsList className="bg-gray-200">
               {!isGuest && <TabsTrigger value="dashboard">Dashboard</TabsTrigger>}
               {!isGuest && <TabsTrigger value="new-product">New Product</TabsTrigger>}
