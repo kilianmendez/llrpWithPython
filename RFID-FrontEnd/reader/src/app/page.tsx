@@ -29,7 +29,7 @@
     
         const token = response.data.access_token
         const isAdmin = response.data.is_admin
-        const userId = response.data.user_id // ✅ asegúrate que venga del backend
+        const userId = response.data.user_id 
     
         localStorage.setItem("token", token)
         localStorage.setItem("email", loginData.email)
