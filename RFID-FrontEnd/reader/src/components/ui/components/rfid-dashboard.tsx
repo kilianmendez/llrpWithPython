@@ -35,6 +35,7 @@ export function RfidDashboard() {
               {!isGuest && <TabsTrigger value="dashboard">Dashboard</TabsTrigger>}
               {!isGuest && <TabsTrigger value="new-product">New Product</TabsTrigger>}
               <TabsTrigger value="inventory">Inventory</TabsTrigger>
+              <TabsTrigger value="readings">Readings</TabsTrigger>
             </TabsList>
 
             {!isGuest && (
@@ -59,6 +60,10 @@ export function RfidDashboard() {
 
             <TabsContent value="inventory" className="space-y-4">
               <ProductTable />
+            </TabsContent>
+
+            <TabsContent value="readings" className="space-y-4">
+              <RecentReadings refreshTrigger={refreshReadingsKey}/>
             </TabsContent>
           </Tabs>
         </div>

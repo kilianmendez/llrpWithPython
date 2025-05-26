@@ -21,6 +21,8 @@ from typing import Optional, Set, List
 from sllurp import llrp
 from unittest.mock import MagicMock
 from models import ProductOut
+from sllurp.llrp import LLRPReaderClient, LLRPReaderConfig, LLRP_DEFAULT_PORT
+
 
 # --- CONFIGURACIÓN APP Y SEGURIDAD -------------------------------------------------------
 
@@ -136,19 +138,7 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     }
 
 
-@app.on_event("startup")
-def create_default_admin():
-    db = next(get_db())
-    email = "admin@gmail.com"
-    if not db.query(User).filter(User.email == email).first():
-        user = User(
-            name="Admin",
-            email=email,
-            hashed_password=get_password_hash("admin"),
-            is_admin=True  # ✅ asignamos rol de admin
-        )
-        db.add(user)
-        db.commit()
+
 
 
 # --- ADMIN -------------------------------------------------------------
@@ -195,12 +185,21 @@ def tag_report_callback(_, tags):
         db = next(get_db())
         try:
             for tag in tags:
-                timestamp = tag.get("LastSeenTimestampUTC", time.time())
+                print("📥 Lectura recibida:", tag)
+
+                # ✅ CORRECCIÓN EPC Y TIMESTAMP
+                raw_epc = tag.get("EPC-96", b"")
+                epc_str = raw_epc.decode("utf-8") if isinstance(raw_epc, bytes) else str(raw_epc)
+
+
+                timestamp_raw = tag.get("LastSeenTimestampUTC", time.time())
+                timestamp = datetime.datetime.utcfromtimestamp(timestamp_raw / 1e6)
+
                 tag_data = {
-                    "epc": tag.get("EPC-96", "N/A"),
+                    "epc": epc_str,
                     "antenna": tag.get("AntennaID", "N/A"),
                     "rssi": tag.get("PeakRSSI", "N/A"),
-                    "timestamp": datetime.datetime.utcfromtimestamp(timestamp),
+                    "timestamp": timestamp,
                     "count": tag.get("TagSeenCount", 1)
                 }
 
@@ -217,9 +216,10 @@ def tag_report_callback(_, tags):
                 tag_queue.put(tag_data)
             db.commit()
         except Exception as e:
-            print("Error saving tag:", e)
+            print("❌ Error saving tag:", e)
         finally:
             db.close()
+
 
 # --- CONEXIÓN LECTOR RFID ----------------------------------------------------------------
 
@@ -236,6 +236,7 @@ async def connect_reader(request: ConnectionRequest):
     try:
         if request.simulation_mode:
             reader = MagicMock()
+
             def add_tag_report_callback(cb):
                 def simulate():
                     count = 0
@@ -250,18 +251,29 @@ async def connect_reader(request: ConnectionRequest):
                         cb(reader, simulated_tags)
                         count += 1
                         time.sleep(2)
+
                 threading.Thread(target=simulate, daemon=True).start()
+
             reader.add_tag_report_callback = add_tag_report_callback
             reader.disconnect = lambda: None
             reader.add_tag_report_callback(tag_report_callback)
+
             return {"status": "success", "message": "Connected in simulation mode"}
 
-        config = {
-            'tag_content_selector': {k: True for k in [
-                'EnableROSpecID', 'EnableSpecIndex', 'EnableInventoryParameterSpecID', 'EnableAntennaID',
-                'EnableChannelIndex', 'EnablePeakRSSI', 'EnableFirstSeenTimestamp',
-                'EnableLastSeenTimestamp', 'EnableTagSeenCount', 'EnableAccessSpecID'
-            ]},
+        # ✅ CONEXIÓN REAL (NUEVA API sllurp)
+        config = LLRPReaderConfig({
+            'tag_content_selector': {
+                'EnableROSpecID': True,
+                'EnableSpecIndex': True,
+                'EnableInventoryParameterSpecID': True,
+                'EnableAntennaID': True,
+                'EnableChannelIndex': True,
+                'EnablePeakRSSI': True,
+                'EnableFirstSeenTimestamp': True,
+                'EnableLastSeenTimestamp': True,
+                'EnableTagSeenCount': True,
+                'EnableAccessSpecID': True
+            },
             'start_inventory': True,
             'report_every_n_tags': 1,
             'antennas': [1],
@@ -269,17 +281,25 @@ async def connect_reader(request: ConnectionRequest):
             'mode_identifier': 1000,
             'session': 2,
             'tag_population': 4
-        }
+        })
 
-        reader = llrp.LLRPClient(request.ip_address, 5084, config)
-        thread = threading.Thread(target=lambda: reader.connect(), daemon=True)
-        thread.start()
-        thread.join(timeout=5)
+        reader = LLRPReaderClient(request.ip_address, LLRP_DEFAULT_PORT, config)
         reader.add_tag_report_callback(tag_report_callback)
+
+        def connect_reader():
+            try:
+                reader.connect()
+            except Exception as e:
+                print("❌ Error al conectar el lector:", e)
+
+        threading.Thread(target=connect_reader, daemon=True).start()
+
         return {"status": "success", "message": "Connected to RFID reader"}
+
     except Exception as e:
         reader = None
         return {"status": "error", "message": str(e)}
+
 
 @app.post("/disconnect")
 async def disconnect_reader():
@@ -290,36 +310,78 @@ async def disconnect_reader():
         return {"status": "success", "message": "Reader disconnected"}
     return {"status": "error", "message": "No reader connected"}
 
+@app.get("/readings")
+def get_readings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return db.query(TagReading).offset(skip).limit(limit).all()
+
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 Iniciando servidor FastAPI...")
+
+    # Crear admin si no existe
+    db = next(get_db())
+    email = "admin@gmail.com"
+    if not db.query(User).filter(User.email == email).first():
+        user = User(
+            name="Admin",
+            email=email,
+            hashed_password=get_password_hash("admin"),
+            is_admin=True
+        )
+        db.add(user)
+        db.commit()
+        print("👤 Usuario admin creado por defecto")
+    db.close()
+
+    # Lanzar tarea de broadcast de tags
+    if not hasattr(app.state, "broadcast_task"):
+        app.state.broadcast_task = asyncio.create_task(broadcast_tags())
+        print("📡 broadcast_tags lanzado correctamente")
+
 # --- WEBSOCKETS --------------------------------------------------------------------------
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    print("🌐 Cliente WebSocket conectado")
     active_websockets.add(websocket)
     try:
-        if not hasattr(app.state, "broadcast_task"):
-            app.state.broadcast_task = asyncio.create_task(broadcast_tags())
         while True:
             await websocket.receive_text()
-    except Exception:
-        pass
+    except Exception as e:
+        print("❌ WebSocket cerrado:", e)
     finally:
         active_websockets.discard(websocket)
+
 
 async def broadcast_tags():
     while True:
         if active_websockets:
             try:
                 tag_data = tag_queue.get_nowait()
+                print("📡 Enviando a clientes:", tag_data)
+
+                # Mandar a todos los clientes conectados
+                disconnected = set()
                 for ws in active_websockets:
-                    await ws.send_text(json.dumps({
-                        **tag_data,
-                        "timestamp": tag_data["timestamp"].isoformat()
-                    }))
+                    try:
+                        await ws.send_text(json.dumps({
+                            **tag_data,
+                            "timestamp": tag_data["timestamp"].isoformat()
+                        }))
+                    except Exception as e:
+                        print("❌ Error enviando a WebSocket, lo quitamos:", e)
+                        disconnected.add(ws)
+
+                # Eliminar sockets caídos
+                for ws in disconnected:
+                    active_websockets.discard(ws)
+
             except queue.Empty:
                 await asyncio.sleep(0.1)
         else:
             await asyncio.sleep(0.1)
+
 
 # --- CRUD PRODUCTOS ----------------------------------------------------------------------
 

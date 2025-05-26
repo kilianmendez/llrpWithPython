@@ -117,7 +117,7 @@ export function ProductTable() {
 
   return (
     <>
-      <Card>
+      <Card className="">
         <CardHeader>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>

@@ -36,6 +36,7 @@ export const WebSocketProvider = ({ children }: { children: React.ReactNode }) =
     }
 
     socket.onmessage = (event) => {
+      console.log("📨 MENSAJE DEL BACK:", event.data);
       try {
         const data = JSON.parse(event.data)
         setMessages((prev) => [...prev.slice(-99), data])

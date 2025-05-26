@@ -34,7 +34,7 @@ export function RfidLog({ isConnected }: RfidLogProps) {
     }
 
     setLogs((prev) => {
-      const updated = [...prev, newLog].slice(-100)
+      const updated = [newLog, ...prev].slice(0, 100)
       setTimeout(() => {
         setLogs((current) =>
           current.map((log) =>

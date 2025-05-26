@@ -64,41 +64,44 @@ export function RecentReadings({ refreshTrigger }: RecentReadingsProps) {
           List of the latest 100 tags detected (from database)
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2 text-sm font-mono">
-        {loading ? (
-          <p className="text-gray-500">Loading readings...</p>
-        ) : readings.length === 0 ? (
-          <p className="text-gray-500">No readings found.</p>
-        ) : (
-          readings.map((r, idx) => (
-            <div
-              key={`${r.epc}-${idx}`}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 border-b py-2"
+      <CardContent>
+  <div className="max-h-[450px] overflow-y-auto space-y-2 text-sm font-mono pr-2">
+    {loading ? (
+      <p className="text-gray-500">Loading readings...</p>
+    ) : readings.length === 0 ? (
+      <p className="text-gray-500">No readings found.</p>
+    ) : (
+      readings.map((r, idx) => (
+        <div
+          key={`${r.epc}-${idx}`}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 border-b py-2"
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-emerald-700 break-all">{r.epc}</span>
+            <button
+              onClick={() => handleCopy(r.epc)}
+              className="text-gray-400 hover:text-emerald-600 transition-colors"
+              title="Copy EPC"
             >
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-emerald-700 break-all">{r.epc}</span>
-                <button
-                  onClick={() => handleCopy(r.epc)}
-                  className="text-gray-400 hover:text-emerald-600 transition-colors"
-                  title="Copy EPC"
-                >
-                  {copiedEpc === r.epc ? (
-                    <Check className="w-4 h-4 text-emerald-500" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-              <div className="text-xs text-gray-500">
-                Antenna: {r.antenna} | RSSI: {r.rssi} | Count: {r.count}
-              </div>
-              <div className="text-xs text-gray-400">
-                {new Date(r.timestamp).toLocaleString()}
-              </div>
-            </div>
-          ))
-        )}
-      </CardContent>
+              {copiedEpc === r.epc ? (
+                <Check className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          <div className="text-xs text-gray-500">
+            Antenna: {r.antenna} | RSSI: {r.rssi} | Count: {r.count}
+          </div>
+          <div className="text-xs text-gray-400">
+            {new Date(r.timestamp).toLocaleString()}
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+</CardContent>
+
     </Card>
   )
 }
